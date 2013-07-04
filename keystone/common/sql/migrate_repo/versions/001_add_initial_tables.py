@@ -84,6 +84,8 @@ def upgrade(migrate_engine):
         meta,
         sql.Column('id', sql.String(64), primary_key=True),
         sql.Column('name', sql.String(64), unique=True, nullable=False),
+        sql.Column('email', sql.Text(), unique=True),
+        sql.Column('eppn', sql.Text(), unique=True),
         sql.Column('extra', sql.Text()))
     user_table.create(migrate_engine, checkfirst=True)
 

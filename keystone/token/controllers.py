@@ -727,3 +727,151 @@ class Auth(controller.V2Controller):
                 })
 
         return {'endpoints': endpoints, 'endpoints_links': []}
+
+    def gakunin_email(self, context, tokenByEmail):
+        """Authenticate gakunin credentials and return a token.
+
+        Accept auth as a dict that looks like:: (tenantName is optional)
+
+            {
+                "tokenByEmail":{
+                    "email": "test01.nii.ac.jp",
+                    "tenantName": "test"
+                }
+            }
+
+        """
+        self.assert_admin(context)
+        if tokenByEmail is None:
+            raise exception.ValidationError(attribute='tokenByEmail',
+                                            target='request body')
+
+        if 'email' not in tokenByEmail:
+            raise exception.ValidationError(attribute='email',
+                                            target='tokenByEmail')
+
+        email_val = tokenByEmail['email']
+
+        user_ref = self.identity_api.get_user_by_email(
+            context=context, email=email_val,
+            domain_id=DEFAULT_DOMAIN_ID)
+
+        tenant_id = self._get_project_id_from_auth(context, tokenByEmail)
+
+        return self._authenticate_gakunin(context, user_ref['id'], tenant_id)
+
+    def gakunin_eppn(self, context, tokenByEppn):
+        """Authenticate gakunin credentials and return a token.
+
+        Accept auth as a dict that looks like:: (tenantName is optional)
+
+            {
+                "tokenByEppn":{
+                    "eppn": "test01.nii.ac.jp",
+                    "tenantName": "test"
+                }
+            }
+
+        """
+        self.assert_admin(context)
+        if tokenByEppn is None:
+            raise exception.ValidationError(attribute='tokenByEppn',
+                                            target='request body')
+
+        if 'eppn' not in tokenByEppn:
+            raise exception.ValidationError(attribute='eppn',
+                                            target='tokenByEppn')
+
+        eppn_val = tokenByEppn['eppn']
+
+        user_ref = self.identity_api.get_user_by_eppn(
+            context=context, eppn=eppn_val,
+            domain_id=DEFAULT_DOMAIN_ID)
+
+        tenant_id = self._get_project_id_from_auth(context, tokenByEppn)
+
+        return self._authenticate_gakunin(context, user_ref['id'], tenant_id)
+
+    def _authenticate_gakunin(self, context, user_id, tenant_id):
+        """
+        """
+        auth_info = self.identity_api.authenticate_gakunin(
+            context=context, user_id=user_id)
+        (user_ref, tenant_ref, metadata_ref) = auth_info
+
+        if not tenant_id:
+            tenant_id = user_ref.get('tenantId', None)
+
+        self._append_roles(metadata_ref,
+                           self._get_group_metadata_ref(
+                               context, user_id, tenant_id))
+        expiry = core.default_expire_time()
+
+        # following is copy-paste from self.authenticate().
+        core.validate_auth_info(self, context, user_ref, tenant_ref)
+        trust_id = metadata_ref.get('trust_id')
+        user_ref = self._filter_domain_id(user_ref)
+        if tenant_ref:
+            tenant_ref = self._filter_domain_id(tenant_ref)
+        auth_token_data = self._get_auth_token_data(user_ref,
+                                                    tenant_ref,
+                                                    metadata_ref,
+                                                    expiry)
+
+        if tenant_ref:
+            catalog_ref = self.catalog_api.get_catalog(
+                context=context,
+                user_id=user_ref['id'],
+                tenant_id=tenant_ref['id'],
+                metadata=metadata_ref)
+        else:
+            catalog_ref = {}
+
+        auth_token_data['id'] = 'placeholder'
+
+        roles_ref = []
+        for role_id in metadata_ref.get('roles', []):
+            role_ref = self.identity_api.get_role(context, role_id)
+            roles_ref.append(dict(name=role_ref['name']))
+
+        token_data = Auth.format_token(auth_token_data, roles_ref)
+
+        service_catalog = Auth.format_catalog(catalog_ref)
+        token_data['access']['serviceCatalog'] = service_catalog
+
+        if CONF.signing.token_format == 'UUID':
+            token_id = uuid.uuid4().hex
+        elif CONF.signing.token_format == 'PKI':
+            try:
+                token_id = cms.cms_sign_token(json.dumps(token_data),
+                                              CONF.signing.certfile,
+                                              CONF.signing.keyfile)
+            except subprocess.CalledProcessError:
+                raise exception.UnexpectedError(_(
+                    'Unable to sign token.'))
+        else:
+            raise exception.UnexpectedError(_(
+                'Invalid value for token_format: %s.'
+                '  Allowed values are PKI or UUID.') %
+                CONF.signing.token_format)
+        try:
+            self.token_api.create_token(
+                context, token_id, dict(key=token_id,
+                                        id=token_id,
+                                        expires=auth_token_data['expires'],
+                                        user=user_ref,
+                                        tenant=tenant_ref,
+                                        metadata=metadata_ref,
+                                        trust_id=trust_id))
+        except Exception as e:
+            # an identical token may have been created already.
+            # if so, return the token_data as it is also identical
+            try:
+                self.token_api.get_token(context=context,
+                                         token_id=token_id)
+            except exception.TokenNotFound:
+                raise e
+
+        token_data['access']['token']['id'] = token_id
+
+        return token_data

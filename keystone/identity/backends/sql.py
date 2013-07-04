@@ -25,17 +25,19 @@ from keystone import identity
 
 class User(sql.ModelBase, sql.DictBase):
     __tablename__ = 'user'
-    attributes = ['id', 'name', 'domain_id', 'password', 'enabled']
+    attributes = ['id', 'name', 'domain_id', 'password', 'enabled', 'email', 'eppn']
     id = sql.Column(sql.String(64), primary_key=True)
     name = sql.Column(sql.String(64), nullable=False)
     domain_id = sql.Column(sql.String(64), sql.ForeignKey('domain.id'),
                            nullable=False)
     password = sql.Column(sql.String(128))
+    email = sql.Column(sql.Text())
+    eppn = sql.Column(sql.Text())
     enabled = sql.Column(sql.Boolean)
     extra = sql.Column(sql.JsonBlob())
     # Unique constraint across two columns to create the separation
     # rather than just only 'name' being unique
-    __table_args__ = (sql.UniqueConstraint('domain_id', 'name'), {})
+    __table_args__ = (sql.UniqueConstraint('domain_id', 'name', 'email', 'eppn'), {})
 
 
 class Group(sql.ModelBase, sql.DictBase):
@@ -192,6 +194,33 @@ class Identity(sql.Base, identity.Driver):
         if tenant_id is not None:
             # FIXME(gyee): this should really be
             # get_roles_for_user_and_project() after the dusts settle
+            if tenant_id not in self.get_projects_for_user(user_id):
+                raise AssertionError('Invalid project')
+            try:
+                tenant_ref = self.get_project(tenant_id)
+                metadata_ref = self.get_metadata(user_id, tenant_id)
+            except exception.ProjectNotFound:
+                tenant_ref = None
+                metadata_ref = {}
+            except exception.MetadataNotFound:
+                metadata_ref = {}
+        return (identity.filter_user(user_ref), tenant_ref, metadata_ref)
+
+    def authenticate_gakunin(self, user_id):
+        """
+        For gakunin auth
+        """
+        user_ref = None
+        tenant_ref = None
+        metadata_ref = {}
+
+        try:
+            user_ref = self._get_user(user_id)
+        except exception.UserNotFound:
+            raise AssertionError ('Invalid user / password %s')
+
+        tenant_id = user_ref['tenantId']
+        if tenant_id is not None:
             if tenant_id not in self.get_projects_for_user(user_id):
                 raise AssertionError('Invalid project')
             try:
@@ -678,6 +707,35 @@ class Identity(sql.Base, identity.Driver):
     def get_user_by_name(self, user_name, domain_id):
         return identity.filter_user(
             self._get_user_by_name(user_name, domain_id))
+
+    def _get_user_by_email(self, email, domain_id):
+        session = self.get_session()
+        query = session.query(User)
+        # query = query.filter(User.extra.like('%email%' + email + '%'))
+        query = query.filter_by(email=email)
+        try:
+            user_ref = query.one()
+        except sql.NotFound:
+            raise exception.UserNotFound(user_id=email)
+        return user_ref.to_dict()
+
+    def get_user_by_email(self, email, domain_id):
+        return identity.filter_user(
+            self._get_user_by_email(email, domain_id))
+
+    def _get_user_by_eppn(self, eppn, domain_id):
+        session = self.get_session()
+        query = session.query(User)
+        query = query.filter_by(eppn=eppn)
+        try:
+            user_ref = query.one()
+        except sql.NotFound:
+            raise exception.UserNotFound(user_id=eppn)
+        return user_ref.to_dict()
+
+    def get_user_by_eppn(self, eppn, domain_id):
+        return identity.filter_user(
+            self._get_user_by_eppn(eppn, domain_id))
 
     @sql.handle_conflicts(type='user')
     def update_user(self, user_id, user):

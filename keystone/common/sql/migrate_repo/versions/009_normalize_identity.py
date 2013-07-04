@@ -31,6 +31,8 @@ def downgrade_user_table_with_copy(meta, migrate_engine):
         meta,
         Column('id', String(64), primary_key=True),
         Column('name', String(64), unique=True, nullable=False),
+        Column('email', Text(), unique=True),
+        Column('eppn', Text(), unique=True),
         Column('extra', Text()))
     user_table.create(migrate_engine, checkfirst=True)
 

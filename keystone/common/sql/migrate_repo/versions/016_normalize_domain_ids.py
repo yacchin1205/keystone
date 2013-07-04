@@ -100,6 +100,8 @@ def upgrade_user_table_with_copy(meta, migrate_engine, session):
         meta2,
         sql.Column('id', sql.String(64), primary_key=True),
         sql.Column('name', sql.String(64), nullable=False),
+        sql.Column('email', sql.Text(), unique=True),
+        sql.Column('eppn', sql.Text(), unique=True),
         sql.Column('extra', sql.Text()),
         sql.Column("password", sql.String(128)),
         sql.Column("enabled", sql.Boolean, default=True),
@@ -236,6 +238,8 @@ def downgrade_user_table_with_copy(meta, migrate_engine, session):
         meta2,
         sql.Column('id', sql.String(64), primary_key=True),
         sql.Column('name', sql.String(64), unique=True, nullable=False),
+        sql.Column('email', sql.Text(), unique=True),
+        sql.Column('eppn', sql.Text(), unique=True),
         sql.Column('extra', sql.Text()),
         sql.Column('password', sql.String(128)),
         sql.Column('enabled', sql.Boolean, default=True))

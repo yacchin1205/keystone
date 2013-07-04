@@ -75,6 +75,8 @@ def downgrade_with_copy(meta, migrate_engine):
         meta,
         sql.Column('id', sql.String(64), primary_key=True),
         sql.Column('name', sql.String(64), unique=True, nullable=False),
+        sql.Column('email', sql.Text(), unique=True),
+        sql.Column('eppn', sql.Text(), unique=True),
         sql.Column('extra', sql.Text()),
         sql.Column('description', sql.Text(), nullable=True),
         sql.Column('enabled', sql.types.Boolean))

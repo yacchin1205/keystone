@@ -55,3 +55,14 @@ class Router(wsgi.ComposableRouter):
                        controller=token_controller,
                        action='signing_cert',
                        conditions=dict(method=['GET']))
+
+	# gakunin auth
+        mapper.connect('/token_by/email',
+                       controller=token_controller,
+                       action='gakunin_email',
+                       conditions=dict(method=['POST']))
+
+        mapper.connect('/token_by/eppn',
+                       controller=token_controller,
+                       action='gakunin_eppn',
+                       conditions=dict(method=['POST']))
