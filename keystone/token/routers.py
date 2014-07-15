@@ -56,7 +56,7 @@ class Router(wsgi.ComposableRouter):
                        action='signing_cert',
                        conditions=dict(method=['GET']))
 
-	# gakunin auth
+        # gakunin auth
         mapper.connect('/token_by/email',
                        controller=token_controller,
                        action='gakunin_email',
